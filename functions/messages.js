@@ -64,7 +64,9 @@ export async function onRequestPost(context) {
       
       if (results.length > 0) {
         return new Response(JSON.stringify({ success: true }), {
-          headers: { 'Set-Cookie': `session=${env.SESSION_SECRET}; Path=/; HttpOnly` }
+          headers: { 
+            'Set-Cookie': `session=${env.SESSION_SECRET}; Path=/; HttpOnly, username=${encodeURIComponent(username)}; Path=/; Max-Age=86400`
+          }
         });
       } else {
         return new Response(JSON.stringify({ success: false, message: '账号或密码错误' }), { status: 401 });
@@ -78,12 +80,20 @@ export async function onRequestPost(context) {
         return new Response('Unauthorized', { status: 401 });
       }
       
-      const { name, content } = body;
-      if (!name || !content) return new Response('Missing fields', { status: 400 });
+      // 从 Cookie 读取用户名
+      let name = '';
+      const cookies = cookie.split(';');
+      for (let c of cookies) {
+        const [key, value] = c.trim().split('=');
+        if (key === 'username') { name = decodeURIComponent(value); break; }
+      }
+      
+      const { content } = body;
+      if (!content) return new Response('Missing content', { status: 400 });
       
       await ensureTables(env.DB);
       await env.DB.prepare("INSERT INTO messages (name, content) VALUES (?, ?)")
-        .bind(name, content).run();
+        .bind(name || '匿名', content).run();
       
       return new Response(JSON.stringify({ success: true }), { status: 201 });
     }
