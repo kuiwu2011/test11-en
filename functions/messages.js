@@ -6,76 +6,16 @@ async function hashPassword(password, salt) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function onRequestPost(context) {
-  const { request, env } = context;
-  const url = new URL(request.url);
-  const path = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
-  const SALT = env.SESSION_SECRET || "default_salt";
-
-  // 注册接口
-  if (path === '/messages/register') {
-    try {
-      const { username, password } = await request.json();
-      if (!username || !password) return new Response('Missing fields', { status: 400 });
-      
-      const password_hash = await hashPassword(password, SALT);
-      await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)")
-        .bind(username, password_hash).run();
-      
-      return new Response(JSON.stringify({ success: true }), { status: 201 });
-    } catch (err) {
-      return new Response("Register Error: " + err.message, { status: 500 });
-    }
-  }
-
-  // 登录接口
-  if (path === '/messages/login') {
-    try {
-      const { username, password } = await request.json();
-      const password_hash = await hashPassword(password, SALT);
-      
-      const { results } = await env.DB.prepare("SELECT id FROM users WHERE username = ? AND password_hash = ?")
-        .bind(username, password_hash).all();
-      
-      if (results.length > 0) {
-        // 登录成功，设置 Cookie
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { 'Set-Cookie': `session=${env.SESSION_SECRET}; Path=/; HttpOnly` }
-        });
-      } else {
-        return new Response('Invalid credentials', { status: 401 });
-      }
-    } catch (err) {
-      return new Response("Login Error: " + err.message, { status: 500 });
-    }
-  }
-
-  // 提交留言接口
-  if (path === '/messages') {
-    try {
-      const cookie = request.headers.get('Cookie') || '';
-      if (!cookie.includes(env.SESSION_SECRET)) {
-        return new Response('Unauthorized', { status: 401 });
-      }
-      
-      const { name, content } = await request.json();
-      if (!name || !content) return new Response('Missing fields', { status: 400 });
-      
-      await env.DB.prepare("INSERT INTO messages (name, content) VALUES (?, ?)")
-        .bind(name, content).run();
-      
-      return new Response(JSON.stringify({ success: true }), { status: 201 });
-    } catch (err) {
-      return new Response("Error: " + err.message, { status: 500 });
-    }
-  }
-  
-  return new Response('Not Found', { status: 404 });
+// 自动建表
+async function ensureTables(db) {
+  await db.prepare("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL)").run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))").run();
 }
 
-// 获取留言和登录状态
+// GET /messages - 获取留言和登录状态
 export async function onRequestGet(context) {
   try {
+    await ensureTables(context.env.DB);
     const cookie = context.request.headers.get('Cookie') || '';
     const isLoggedIn = cookie.includes(context.env.SESSION_SECRET);
     
@@ -86,6 +26,69 @@ export async function onRequestGet(context) {
     return new Response(JSON.stringify({ loggedIn: isLoggedIn, messages: results }), {
       headers: { "Content-Type": "application/json" }
     });
+  } catch (err) {
+    return new Response("Error: " + err.message, { status: 500 });
+  }
+}
+
+// POST /messages - 处理注册、登录、留言
+export async function onRequestPost(context) {
+  try {
+    const { request, env } = context;
+    const SALT = env.SESSION_SECRET || "default_salt";
+    
+    const body = await request.json();
+    const action = body.action; // 'register', 'login', 'message'
+    
+    // 注册
+    if (action === 'register') {
+      const { username, password } = body;
+      if (!username || !password) return new Response('Missing fields', { status: 400 });
+      
+      const password_hash = await hashPassword(password, SALT);
+      await ensureTables(env.DB);
+      await env.DB.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)")
+        .bind(username, password_hash).run();
+      
+      return new Response(JSON.stringify({ success: true, message: '注册成功' }), { status: 201 });
+    }
+    
+    // 登录
+    if (action === 'login') {
+      const { username, password } = body;
+      const password_hash = await hashPassword(password, SALT);
+      
+      await ensureTables(env.DB);
+      const { results } = await env.DB.prepare("SELECT id FROM users WHERE username = ? AND password_hash = ?")
+        .bind(username, password_hash).all();
+      
+      if (results.length > 0) {
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Set-Cookie': `session=${env.SESSION_SECRET}; Path=/; HttpOnly` }
+        });
+      } else {
+        return new Response(JSON.stringify({ success: false, message: '账号或密码错误' }), { status: 401 });
+      }
+    }
+    
+    // 发表留言
+    if (action === 'message') {
+      const cookie = request.headers.get('Cookie') || '';
+      if (!cookie.includes(env.SESSION_SECRET)) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      
+      const { name, content } = body;
+      if (!name || !content) return new Response('Missing fields', { status: 400 });
+      
+      await ensureTables(env.DB);
+      await env.DB.prepare("INSERT INTO messages (name, content) VALUES (?, ?)")
+        .bind(name, content).run();
+      
+      return new Response(JSON.stringify({ success: true }), { status: 201 });
+    }
+    
+    return new Response('Invalid action', { status: 400 });
   } catch (err) {
     return new Response("Error: " + err.message, { status: 500 });
   }
