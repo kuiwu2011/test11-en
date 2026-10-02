@@ -1,84 +1,108 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <title>留言板</title>
-    <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
-        input, textarea, button { width: 100%; margin: 10px 0; padding: 10px; box-sizing: border-box; }
-        .msg { border-bottom: 1px solid #ccc; padding: 10px 0; }
-        .hidden { display: none; }
-    </style>
+  <meta charset="UTF-8">
+  <title>简单留言板</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; }
+    input, textarea, button { width: 100%; margin: 5px 0; padding: 8px; box-sizing: border-box; }
+    button { cursor: pointer; }
+    .hidden { display: none; }
+    .msg { border-bottom: 1px solid #ccc; padding: 5px 0; }
+  </style>
 </head>
 <body>
-    <h1>简单留言板</h1>
+  <h2>简单留言板</h2>
+  
+  <div id="auth-section">
+    <div id="login-form">
+      <h3>管理员登录</h3>
+      <input type="text" id="login-user" placeholder="账号">
+      <input type="password" id="login-pass" placeholder="密码">
+      <button onclick="login()">登录</button>
+      <p>没有账号？<a href="#" onclick="toggleReg()">点击注册</a></p>
+    </div>
     
-    <!-- 登录区域 -->
-    <div id="login-area">
-        <h3>管理员登录</h3>
-        <input type="text" id="username" placeholder="用户名">
-        <input type="password" id="password" placeholder="密码">
-        <button onclick="doLogin()">登录</button>
-        <p id="login-msg"></p>
+    <div id="reg-form" class="hidden">
+      <h3>注册账号</h3>
+      <input type="text" id="reg-user" placeholder="新账号">
+      <input type="password" id="reg-pass" placeholder="新密码">
+      <button onclick="register()">注册</button>
+      <p>已有账号？<a href="#" onclick="toggleReg()">返回登录</a></p>
     </div>
+  </div>
 
-    <!-- 留言区域 -->
-    <div id="guestbook-area" class="hidden">
-        <p>已登录！<a href="#" onclick="doLogout()">退出</a></p>
-        <h3>发表留言</h3>
-        <input type="text" id="msg-name" placeholder="昵称">
-        <textarea id="msg-content" placeholder="留言内容"></textarea>
-        <button onclick="postMsg()">提交留言</button>
+  <div id="board-section" class="hidden">
+    <p>已登录！<a href="#" onclick="logout()">退出</a></p>
+    <h3>发表留言</h3>
+    <input type="text" id="msg-name" placeholder="昵称">
+    <textarea id="msg-content" placeholder="留言内容"></textarea>
+    <button onclick="postMsg()">提交留言</button>
+    <h3>留言列表</h3>
+    <div id="messages-list"></div>
+  </div>
+
+  <script>
+    function toggleReg() {
+      document.getElementById('login-form').classList.toggle('hidden');
+      document.getElementById('reg-form').classList.toggle('hidden');
+    }
+
+    async function register() {
+      const username = document.getElementById('reg-user').value;
+      const password = document.getElementById('reg-pass').value;
+      const res = await fetch('/messages/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if(res.ok) { alert('注册成功，请登录！'); toggleReg(); }
+      else alert('注册失败');
+    }
+
+    async function login() {
+      const username = document.getElementById('login-user').value;
+      const password = document.getElementById('login-pass').value;
+      const res = await fetch('/messages/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if(res.ok) { location.reload(); }
+      else alert('登录失败');
+    }
+
+    function logout() {
+      document.cookie = "session=; Path=/; Max-Age=0";
+      location.reload();
+    }
+
+    async function postMsg() {
+      const name = document.getElementById('msg-name').value;
+      const content = document.getElementById('msg-content').value;
+      await fetch('/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, content })
+      });
+      location.reload();
+    }
+
+    async function checkAuth() {
+      const res = await fetch('/messages');
+      const data = await res.json();
+      if (data.loggedIn) {
+        document.getElementById('auth-section').classList.add('hidden');
+        document.getElementById('board-section').classList.remove('hidden');
         
-        <h3>留言列表</h3>
-        <div id="messages-list">加载中...</div>
-    </div>
-
-    <script>
-        // 检查登录状态并加载留言
-        fetch('/messages').then(res => res.json()).then(data => {
-            if(data.loggedIn) {
-                document.getElementById('login-area').classList.add('hidden');
-                document.getElementById('guestbook-area').classList.remove('hidden');
-            }
-            renderMessages(data.messages);
+        const list = document.getElementById('messages-list');
+        list.innerHTML = '';
+        data.messages.forEach(m => {
+          list.innerHTML += `<div class="msg"><b>${m.name}:</b> ${m.content}</div>`;
         });
-
-        function renderMessages(msgs) {
-            const list = document.getElementById('messages-list');
-            list.innerHTML = msgs && msgs.length > 0 
-                ? msgs.map(m => `<div class="msg"><strong>${m.name}</strong>: ${m.content}</div>`).join('')
-                : '暂无留言';
-        }
-
-        function doLogin() {
-            fetch('/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user: document.getElementById('username').value,
-                    pass: document.getElementById('password').value
-                })
-            }).then(res => res.json()).then(data => {
-                document.getElementById('login-msg').innerText = data.message;
-                if(data.success) location.reload();
-            });
-        }
-
-        function doLogout() {
-            fetch('/logout').then(() => location.reload());
-        }
-
-        function postMsg() {
-            fetch('/messages', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: document.getElementById('msg-name').value,
-                    content: document.getElementById('msg-content').value
-                })
-            }).then(() => location.reload());
-        }
-    </script>
+      }
+    }
+    checkAuth();
+  </script>
 </body>
 </html>
