@@ -4,23 +4,27 @@
   <meta charset="UTF-8">
   <title>简单留言板</title>
   <style>
-    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; }
-    input, textarea, button { width: 100%; margin: 5px 0; padding: 8px; box-sizing: border-box; }
-    button { cursor: pointer; }
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+    input, textarea, button { width: 100%; margin: 8px 0; padding: 10px; box-sizing: border-box; }
+    button { cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; }
+    button:hover { background: #0056b3; }
     .hidden { display: none; }
-    .msg { border-bottom: 1px solid #ccc; padding: 5px 0; }
+    .msg { border-bottom: 1px solid #eee; padding: 10px 0; }
+    .msg strong { color: #333; }
+    #login-msg { margin-top: 10px; font-size: 14px; }
   </style>
 </head>
 <body>
-  <h2>简单留言板</h2>
+  <h2>📝 简单留言板</h2>
   
   <div id="auth-section">
     <div id="login-form">
-      <h3>管理员登录</h3>
+      <h3>登录</h3>
       <input type="text" id="login-user" placeholder="账号">
       <input type="password" id="login-pass" placeholder="密码">
       <button onclick="login()">登录</button>
       <p>没有账号？<a href="#" onclick="toggleReg()">点击注册</a></p>
+      <p id="login-msg"></p>
     </div>
     
     <div id="reg-form" class="hidden">
@@ -29,47 +33,68 @@
       <input type="password" id="reg-pass" placeholder="新密码">
       <button onclick="register()">注册</button>
       <p>已有账号？<a href="#" onclick="toggleReg()">返回登录</a></p>
+      <p id="reg-msg"></p>
     </div>
   </div>
 
   <div id="board-section" class="hidden">
-    <p>已登录！<a href="#" onclick="logout()">退出</a></p>
+    <p>✅ 已登录！<a href="#" onclick="logout()">退出</a></p>
     <h3>发表留言</h3>
     <input type="text" id="msg-name" placeholder="昵称">
-    <textarea id="msg-content" placeholder="留言内容"></textarea>
+    <textarea id="msg-content" placeholder="留言内容" rows="4"></textarea>
     <button onclick="postMsg()">提交留言</button>
     <h3>留言列表</h3>
-    <div id="messages-list"></div>
+    <div id="messages-list">加载中...</div>
   </div>
 
   <script>
     function toggleReg() {
       document.getElementById('login-form').classList.toggle('hidden');
       document.getElementById('reg-form').classList.toggle('hidden');
+      document.getElementById('login-msg').innerText = '';
+      document.getElementById('reg-msg').innerText = '';
     }
 
     async function register() {
       const username = document.getElementById('reg-user').value;
       const password = document.getElementById('reg-pass').value;
-      const res = await fetch('/messages/register', {
+      const msgEl = document.getElementById('reg-msg');
+      
+      const res = await fetch('/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ action: 'register', username, password })
       });
-      if(res.ok) { alert('注册成功，请登录！'); toggleReg(); }
-      else alert('注册失败');
+      
+      const data = await res.json().catch(() => ({}));
+      if(res.ok) { 
+        msgEl.style.color = 'green';
+        msgEl.innerText = '注册成功，请登录！'; 
+        setTimeout(toggleReg, 1500);
+      } else {
+        msgEl.style.color = 'red';
+        msgEl.innerText = data.message || '注册失败';
+      }
     }
 
     async function login() {
       const username = document.getElementById('login-user').value;
       const password = document.getElementById('login-pass').value;
-      const res = await fetch('/messages/login', {
+      const msgEl = document.getElementById('login-msg');
+      
+      const res = await fetch('/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ action: 'login', username, password })
       });
-      if(res.ok) { location.reload(); }
-      else alert('登录失败');
+      
+      if(res.ok) { 
+        location.reload(); 
+      } else {
+        const data = await res.json().catch(() => ({}));
+        msgEl.style.color = 'red';
+        msgEl.innerText = data.message || '登录失败';
+      }
     }
 
     function logout() {
@@ -80,29 +105,46 @@
     async function postMsg() {
       const name = document.getElementById('msg-name').value;
       const content = document.getElementById('msg-content').value;
+      
       await fetch('/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, content })
+        body: JSON.stringify({ action: 'message', name, content })
       });
-      location.reload();
+      
+      document.getElementById('msg-name').value = '';
+      document.getElementById('msg-content').value = '';
+      loadMessages();
     }
 
-    async function checkAuth() {
+    async function loadMessages() {
       const res = await fetch('/messages');
       const data = await res.json();
+      
       if (data.loggedIn) {
         document.getElementById('auth-section').classList.add('hidden');
         document.getElementById('board-section').classList.remove('hidden');
         
         const list = document.getElementById('messages-list');
-        list.innerHTML = '';
-        data.messages.forEach(m => {
-          list.innerHTML += `<div class="msg"><b>${m.name}:</b> ${m.content}</div>`;
-        });
+        if (data.messages && data.messages.length > 0) {
+          list.innerHTML = data.messages.map(m => 
+            `<div class="msg"><strong>${escapeHtml(m.name)}:</strong> ${escapeHtml(m.content)}</div>`
+          ).join('');
+        } else {
+          list.innerHTML = '暂无留言';
+        }
+      } else {
+        document.getElementById('auth-section').classList.remove('hidden');
+        document.getElementById('board-section').classList.add('hidden');
       }
     }
-    checkAuth();
+    
+    function escapeHtml(text) {
+      const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+      return text.replace(/[&<>"']/g, m => map[m]);
+    }
+    
+    loadMessages();
   </script>
 </body>
 </html>
