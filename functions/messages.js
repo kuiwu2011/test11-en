@@ -53,7 +53,7 @@ export async function onRequestPost(context) {
       return new Response(JSON.stringify({ success: true, message: '注册成功' }), { status: 201 });
     }
     
-    // 登录
+    // 登录 - 修复：用 Headers 对象分别 append 两个 Cookie
     if (action === 'login') {
       const { username, password } = body;
       const password_hash = await hashPassword(password, SALT);
@@ -63,11 +63,12 @@ export async function onRequestPost(context) {
         .bind(username, password_hash).all();
       
       if (results.length > 0) {
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { 
-            'Set-Cookie': `session=${env.SESSION_SECRET}; Path=/; HttpOnly, username=${encodeURIComponent(username)}; Path=/; Max-Age=86400`
-          }
-        });
+        const headers = new Headers();
+        headers.append('Set-Cookie', `session=${env.SESSION_SECRET}; Path=/; HttpOnly`);
+        headers.append('Set-Cookie', `username=${encodeURIComponent(username)}; Path=/; Max-Age=86400`);
+        headers.set('Content-Type', 'application/json');
+        
+        return new Response(JSON.stringify({ success: true }), { headers });
       } else {
         return new Response(JSON.stringify({ success: false, message: '账号或密码错误' }), { status: 401 });
       }
