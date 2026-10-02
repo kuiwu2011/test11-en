@@ -8,17 +8,18 @@ async function ensureTable(db) {
   ).run();
 }
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet(context) {
   try {
-    await ensureTable(env.DB);
+    await ensureTable(context.env.DB);
+    
     // 读取最新的50条留言
-    const { results } = await env.DB.prepare(
+    const { results } = await context.env.DB.prepare(
       "SELECT id, name, content, created_at FROM messages ORDER BY id DESC LIMIT 50"
     ).all();
     
-    // 简单验证登录状态
+    // 验证登录状态
     const cookie = context.request.headers.get('Cookie') || '';
-    const isLoggedIn = cookie.includes(env.SESSION_SECRET);
+    const isLoggedIn = cookie.includes(context.env.SESSION_SECRET);
 
     return new Response(JSON.stringify({ loggedIn: isLoggedIn, messages: results }), {
       headers: { "Content-Type": "application/json" }
@@ -28,22 +29,23 @@ export async function onRequestGet({ env }) {
   }
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost(context) {
   try {
     // 验证登录
-    const cookie = request.headers.get('Cookie') || '';
-    if (!cookie.includes(env.SESSION_SECRET)) {
+    const cookie = context.request.headers.get('Cookie') || '';
+    if (!cookie.includes(context.env.SESSION_SECRET)) {
       return new Response('Unauthorized', { status: 401 });
     }
     
-    await ensureTable(env.DB);
-    const { name, content } = await request.json();
+    await ensureTable(context.env.DB);
+    
+    const { name, content } = await context.request.json();
     if (!name || !content) {
       return new Response('Missing fields', { status: 400 });
     }
     
     // 插入留言
-    await env.DB.prepare(
+    await context.env.DB.prepare(
       "INSERT INTO messages (name, content) VALUES (?, ?)"
     ).bind(name, content).run();
     
