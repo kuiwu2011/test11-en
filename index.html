@@ -12,6 +12,7 @@
     .msg { border-bottom: 1px solid #eee; padding: 10px 0; }
     .msg strong { color: #333; }
     #login-msg { margin-top: 10px; font-size: 14px; }
+    #welcome-text { color: #007bff; font-weight: bold; margin: 10px 0; }
   </style>
 </head>
 <body>
@@ -38,10 +39,11 @@
   </div>
 
   <div id="board-section" class="hidden">
-    <p>✅ 已登录！<a href="#" onclick="logout()">退出</a></p>
+    <p>✅ 已登录！<a href="/logout">退出</a></p>
+    <p id="welcome-text"></p>
     <h3>发表留言</h3>
-    <input type="text" id="msg-name" placeholder="昵称">
-    <textarea id="msg-content" placeholder="留言内容" rows="4"></textarea>
+    <input type="hidden" id="msg-name">
+    <textarea id="msg-content" placeholder="说点什么吧..." rows="4"></textarea>
     <button onclick="postMsg()">提交留言</button>
     <h3>留言列表</h3>
     <div id="messages-list">加载中...</div>
@@ -97,22 +99,16 @@
       }
     }
 
-    function logout() {
-      document.cookie = "session=; Path=/; Max-Age=0";
-      location.reload();
-    }
-
     async function postMsg() {
-      const name = document.getElementById('msg-name').value;
       const content = document.getElementById('msg-content').value;
+      if (!content.trim()) { alert('请输入留言内容'); return; }
       
       await fetch('/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'message', name, content })
+        body: JSON.stringify({ action: 'message', content })
       });
       
-      document.getElementById('msg-name').value = '';
       document.getElementById('msg-content').value = '';
       loadMessages();
     }
@@ -124,6 +120,16 @@
       if (data.loggedIn) {
         document.getElementById('auth-section').classList.add('hidden');
         document.getElementById('board-section').classList.remove('hidden');
+        
+        // 读取 Cookie 中的用户名
+        const cookies = document.cookie.split(';');
+        let username = '';
+        for (let c of cookies) {
+          const [key, value] = c.trim().split('=');
+          if (key === 'username') { username = decodeURIComponent(value); break; }
+        }
+        document.getElementById('msg-name').value = username;
+        document.getElementById('welcome-text').innerText = username ? `👋 欢迎，${username}！` : '';
         
         const list = document.getElementById('messages-list');
         if (data.messages && data.messages.length > 0) {
