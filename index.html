@@ -1,1 +1,84 @@
-Here test11-en! update 1.2
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>留言板</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+        input, textarea, button { width: 100%; margin: 10px 0; padding: 10px; box-sizing: border-box; }
+        .msg { border-bottom: 1px solid #ccc; padding: 10px 0; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>简单留言板</h1>
+    
+    <!-- 登录区域 -->
+    <div id="login-area">
+        <h3>管理员登录</h3>
+        <input type="text" id="username" placeholder="用户名">
+        <input type="password" id="password" placeholder="密码">
+        <button onclick="doLogin()">登录</button>
+        <p id="login-msg"></p>
+    </div>
+
+    <!-- 留言区域 -->
+    <div id="guestbook-area" class="hidden">
+        <p>已登录！<a href="#" onclick="doLogout()">退出</a></p>
+        <h3>发表留言</h3>
+        <input type="text" id="msg-name" placeholder="昵称">
+        <textarea id="msg-content" placeholder="留言内容"></textarea>
+        <button onclick="postMsg()">提交留言</button>
+        
+        <h3>留言列表</h3>
+        <div id="messages-list">加载中...</div>
+    </div>
+
+    <script>
+        // 检查登录状态并加载留言
+        fetch('/messages').then(res => res.json()).then(data => {
+            if(data.loggedIn) {
+                document.getElementById('login-area').classList.add('hidden');
+                document.getElementById('guestbook-area').classList.remove('hidden');
+            }
+            renderMessages(data.messages);
+        });
+
+        function renderMessages(msgs) {
+            const list = document.getElementById('messages-list');
+            list.innerHTML = msgs && msgs.length > 0 
+                ? msgs.map(m => `<div class="msg"><strong>${m.name}</strong>: ${m.content}</div>`).join('')
+                : '暂无留言';
+        }
+
+        function doLogin() {
+            fetch('/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user: document.getElementById('username').value,
+                    pass: document.getElementById('password').value
+                })
+            }).then(res => res.json()).then(data => {
+                document.getElementById('login-msg').innerText = data.message;
+                if(data.success) location.reload();
+            });
+        }
+
+        function doLogout() {
+            fetch('/logout').then(() => location.reload());
+        }
+
+        function postMsg() {
+            fetch('/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: document.getElementById('msg-name').value,
+                    content: document.getElementById('msg-content').value
+                })
+            }).then(() => location.reload());
+        }
+    </script>
+</body>
+</html>
